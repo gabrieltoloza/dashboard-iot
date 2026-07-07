@@ -7,6 +7,10 @@ export interface Device {
   nombre: string
   status: 'online' | 'offline' | 'warning'
   sensores: Sensor[]
+  zonaNombre?: string | null
+  grupoNombre?: string | null
+  latestIngestedAt?: string | null
+  latestReadingValue?: number | null
 }
 
 export interface Sensor {
@@ -123,12 +127,12 @@ export interface AlarmFilters {
 export type ViewMode = 'table' | 'grid'
 
 export const SENSOR_TYPE_META: Record<SensorType, { label: string; color: string; unit: string; min: number; max: number }> = {
-  temperatura: { label: 'Temperatura', color: '#ef4444', unit: '°C', min: 15, max: 45 },
-  humedad: { label: 'Humedad', color: '#3b82f6', unit: '%', min: 30, max: 90 },
-  tension: { label: 'Tensión', color: '#f59e0b', unit: 'V', min: 210, max: 240 },
-  corriente: { label: 'Corriente', color: '#8b5cf6', unit: 'A', min: 0.5, max: 15 },
-  potencia: { label: 'Potencia', color: '#10b981', unit: 'W', min: 0, max: 5000 },
-  presion: { label: 'Presión', color: '#06b6d4', unit: 'bar', min: 2, max: 8 },
-  frecuencia: { label: 'Frecuencia', color: '#ec4899', unit: 'Hz', min: 49, max: 51 },
+  temperatura: { label: 'Temperatura', color: '#ef4444', unit: '°C', min: -20, max: 80 },
+  humedad: { label: 'Humedad', color: '#3b82f6', unit: '%', min: 0, max: 100 },
+  tension: { label: 'Tensión', color: '#f59e0b', unit: 'V', min: 0, max: 500 },
+  corriente: { label: 'Corriente', color: '#8b5cf6', unit: 'A', min: 0, max: 100 },
+  potencia: { label: 'Potencia', color: '#10b981', unit: 'W', min: 0, max: 50000 },
+  presion: { label: 'Presión', color: '#06b6d4', unit: 'bar', min: 0, max: 50 },
+  frecuencia: { label: 'Frecuencia', color: '#ec4899', unit: 'Hz', min: 0, max: 100 },
   puerta: { label: 'Puerta', color: '#6b7280', unit: '', min: 0, max: 1 },
 }

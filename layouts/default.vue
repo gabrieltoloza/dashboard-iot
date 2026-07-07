@@ -22,17 +22,17 @@ const now = ref(new Date())
 
 const navItems = [
 	{ to: '/', label: 'Dashboard', icon: Activity, match: (p: string) => p === '/' },
-	{ to: '/devices', label: 'Estaciones', icon: Cpu, match: (p: string) => p.startsWith('/devices') },
+	{ to: '/devices', label: 'Dispositivos', icon: Cpu, match: (p: string) => p.startsWith('/devices') },
 	{ to: '/sensors', label: 'Sensores', icon: BarChart3, match: (p: string) => p === '/sensors' },
 	{ to: '/alarms', label: 'Alarmas', icon: Bell, match: (p: string) => p === '/alarms' },
 	{ to: '/zones', label: 'Zonas', icon: Map, match: (p: string) => p === '/zones' },
 	{ to: '/groups', label: 'Grupos', icon: Users, match: (p: string) => p === '/groups' },
-	{ to: '/charts', label: 'Gráficos', icon: BarChart3, match: (p: string) => p.startsWith('/charts') },
+	{ to: '/charts', label: 'Catálogo de Gráficos', icon: BarChart3, match: (p: string) => p.startsWith('/charts') },
 ]
 
 const pageTitles: Record<string, string> = {
 	'/': 'Dashboard',
-	'/devices': 'Estaciones',
+	'/devices': 'Dispositivos',
 	'/sensors': 'Sensores',
 	'/alarms': 'Alarmas',
 	'/zones': 'Zonas',
@@ -42,7 +42,7 @@ const pageTitles: Record<string, string> = {
 
 const pageTitle = computed(() => {
 	const path = route.path
-	if (path.startsWith('/devices/')) return 'Detalle de Estación'
+	if (path.startsWith('/devices/')) return 'Detalle de Dispositivo'
 	if (path.startsWith('/charts/')) return 'Gráficos'
 	return pageTitles[path] || 'Dashboard'
 })

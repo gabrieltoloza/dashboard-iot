@@ -1,141 +1,213 @@
 import type { Device, DataPoint, AlarmPoint, Zone, Group, DashboardMetrics, RecentEvent, DeviceFilters, AlarmFilters } from '~/types'
-import { generateDevices, generateDataPoints, generateAlarms, getZones, getGroups, getDashboardMetrics, getRecentEvents } from './mockData'
+import { apiGet } from '~/composables/useApi'
+import {
+    toDevice,
+    type BackendDevice,
+    type BackendDeviceDetail,
+    type BackendSensor,
+} from './adapters/device.adapter'
+import { toZone, toGroup, type BackendZone, type BackendGroup } from './adapters/zone.adapter'
+import { toDataPoint } from './adapters/reading.adapter'
+import { toSensor, type BackendReading, readingKey } from './adapters/sensor.adapter'
+import { generateAlarms, generateDevices, getZones as mockGetZones, getGroups as mockGetGroups } from './mockData'
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-let devicesCache: Device[] | null = null
 let alarmsCache: AlarmPoint[] | null = null
 
-function getDevicesData(): { devices: Device[], alarms: AlarmPoint[] } {
-  if (!devicesCache) devicesCache = generateDevices(5)
-  if (!alarmsCache) alarmsCache = generateAlarms(devicesCache, 30)
-  return { devices: devicesCache, alarms: alarmsCache }
-}
-
-export function getDevices(filters?: DeviceFilters): Promise<Device[]> {
-  return delay(300).then(() => {
-    const { devices } = getDevicesData()
-    let result = [...devices]
-    if (filters?.search) {
-      const search = filters.search.toLowerCase()
-      result = result.filter(d =>
-        d.nombre.toLowerCase().includes(search) ||
-        d.serial.toLowerCase().includes(search) ||
-        d.modelo.toLowerCase().includes(search)
-      )
+function getAlarmsData(): AlarmPoint[] {
+    if (!alarmsCache) {
+        const seed = generateDevices(5)
+        alarmsCache = generateAlarms(seed, 30)
     }
-    if (filters?.status && filters.status !== 'all') result = result.filter(d => d.status === filters.status)
-    if (filters?.zona && filters.zona !== 'all') result = result.filter(d => d.zona === filters.zona)
-    if (filters?.grupo && filters.grupo !== 'all') result = result.filter(d => d.grupo === filters.grupo)
-    return result
-  })
+    return alarmsCache
 }
 
-export function getDevice(id: number): Promise<Device | undefined> {
-  return delay(300).then(() => {
-    const { devices } = getDevicesData()
-    return devices.find(d => d.id === id)
-  })
+function mapDeviceFilters(filters?: DeviceFilters): Record<string, string | number> {
+    if (!filters) return {}
+    const out: Record<string, string | number> = {}
+    if (filters.search) out.search = filters.search
+    if (filters.zona && filters.zona !== 'all') out.zoneId = filters.zona
+    if (filters.grupo && filters.grupo !== 'all') out.groupId = filters.grupo
+    return out
 }
 
-export function getDeviceDataPoints(deviceId: number, hours = 24): Promise<DataPoint[]> {
-  return delay(300).then(() => {
-    const { devices } = getDevicesData()
-    const device = devices.find(d => d.id === deviceId)
-    if (!device) return []
-    return generateDataPoints(device, hours)
-  })
-}
-
-export function getAlarms(filters?: AlarmFilters): Promise<AlarmPoint[]> {
-  return delay(300).then(() => {
-    const { alarms } = getDevicesData()
-    let result = [...alarms]
-    if (filters?.search) {
-      const search = filters.search.toLowerCase()
-      result = result.filter(a =>
-        a.nombre.toLowerCase().includes(search) ||
-        a.alarma.toLowerCase().includes(search) ||
-        a.dispositivo.toLowerCase().includes(search)
-      )
+export async function getDevices(filters?: DeviceFilters): Promise<Device[]> {
+    const data = await apiGet<BackendDevice[]>('/api/devices', mapDeviceFilters(filters))
+    let result = data.map(toDevice)
+    if (filters?.status && filters.status !== 'all') {
+        result = result.filter((d) => d.status === filters.status)
     }
-    if (filters?.severidad && filters.severidad !== 'all') result = result.filter(a => a.severidad === filters.severidad)
-    if (filters?.estado && filters.estado !== 'all') result = result.filter(a => a.estado === filters.estado)
-    if (filters?.dispositivo && filters.dispositivo !== 'all') result = result.filter(a => a.dispositivo === String(filters.dispositivo))
     return result
-  })
 }
 
-export function acknowledgeAlarm(id: string): Promise<AlarmPoint | undefined> {
-  return delay(300).then(() => {
-    const { alarms } = getDevicesData()
-    const alarm = alarms.find(a => a.id === id)
+export async function getDevice(id: number): Promise<Device | undefined> {
+    try {
+        const [detail, latest] = await Promise.all([
+            apiGet<BackendDeviceDetail>(`/api/devices/${id}`),
+            apiGet<BackendReading[]>('/api/readings/latest'),
+        ])
+        const base = toDevice(detail)
+        const latestByName: Record<string, BackendReading> = {}
+        for (const r of latest) {
+            if (r.dispositivo === detail.nombre) latestByName[r.sensor] = r
+        }
+        return {
+            ...base,
+            sensores: detail.sensores.map((s) => toSensor(s, latestByName[s.sensor_name] ?? null)),
+            latestIngestedAt: detail.latest_ingested_at,
+            latestReadingValue: detail.latest_reading_value,
+        }
+    } catch (e) {
+        const err = e as Error
+        if (/404|not found/i.test(err.message)) return undefined
+        throw e
+    }
+}
+
+export async function getAllSensors(): Promise<BackendSensor[]> {
+    return apiGet<BackendSensor[]>('/api/sensors')
+}
+
+export async function getLatestReadings(): Promise<BackendReading[]> {
+    return apiGet<BackendReading[]>('/api/readings/latest')
+}
+
+export async function getDeviceDataPoints(dispositivo: string, hours = 24): Promise<DataPoint[]> {
+    if (!dispositivo) return []
+    const now = new Date()
+    const from = new Date(now.getTime() - hours * 60 * 60 * 1000)
+    const data = await apiGet<BackendReading[]>('/api/readings', {
+        device: dispositivo,
+        from: from.toISOString(),
+        to: now.toISOString(),
+        limit: 1000,
+    })
+    return data.map(toDataPoint)
+}
+
+export async function getAlarms(filters?: AlarmFilters): Promise<AlarmPoint[]> {
+    await delay(300)
+    let result = [...getAlarmsData()]
+    if (filters?.search) {
+        const search = filters.search.toLowerCase()
+        result = result.filter(
+            (a) =>
+                a.nombre.toLowerCase().includes(search) ||
+                a.alarma.toLowerCase().includes(search) ||
+                a.dispositivo.toLowerCase().includes(search),
+        )
+    }
+    if (filters?.severidad && filters.severidad !== 'all') result = result.filter((a) => a.severidad === filters.severidad)
+    if (filters?.estado && filters.estado !== 'all') result = result.filter((a) => a.estado === filters.estado)
+    if (filters?.dispositivo && filters.dispositivo !== 'all') result = result.filter((a) => a.dispositivo === String(filters.dispositivo))
+    return result
+}
+
+export async function acknowledgeAlarm(id: string): Promise<AlarmPoint | undefined> {
+    await delay(300)
+    const alarm = getAlarmsData().find((a) => a.id === id)
     if (alarm) alarm.estado = 'acknowledged'
     return alarm
-  })
 }
 
-export function getZonesData(): Promise<Zone[]> { return delay(300).then(() => getZones()) }
-
-export function createZone(zone: Omit<Zone, 'id'>): Promise<Zone> {
-  return delay(300).then(() => {
-    const zones = getZones()
-    return { ...zone, id: Math.max(...zones.map(z => z.id)) + 1 }
-  })
+export async function getZonesData(): Promise<Zone[]> {
+    const data = await apiGet<BackendZone[]>('/api/zones')
+    return data.map(toZone)
 }
 
-export function updateZone(id: number, updates: Partial<Zone>): Promise<Zone | undefined> {
-  return delay(300).then(() => {
-    const zones = getZones()
-    const zone = zones.find(z => z.id === id)
+export async function createZone(zone: Omit<Zone, 'id'>): Promise<Zone> {
+    await delay(300)
+    const zones = mockGetZones()
+    return { ...zone, id: Math.max(...zones.map((z) => z.id), 0) + 1 }
+}
+
+export async function updateZone(id: number, updates: Partial<Zone>): Promise<Zone | undefined> {
+    await delay(300)
+    const zones = mockGetZones()
+    const zone = zones.find((z) => z.id === id)
     if (zone) Object.assign(zone, updates)
     return zone
-  })
 }
 
-export function deleteZone(_id: number): Promise<boolean> {
-  return delay(300).then(() => true)
+export async function deleteZone(_id: number): Promise<boolean> {
+    await delay(300)
+    return true
 }
 
-export function getGroupsData(): Promise<Group[]> { return delay(300).then(() => getGroups()) }
-
-export function createGroup(group: Omit<Group, 'id'>): Promise<Group> {
-  return delay(300).then(() => {
-    const groups = getGroups()
-    return { ...group, id: Math.max(...groups.map(g => g.id)) + 1 }
-  })
+export async function getGroupsData(): Promise<Group[]> {
+    const data = await apiGet<BackendGroup[]>('/api/groups')
+    return data.map(toGroup)
 }
 
-export function updateGroup(id: number, updates: Partial<Group>): Promise<Group | undefined> {
-  return delay(300).then(() => {
-    const groups = getGroups()
-    const group = groups.find(g => g.id === id)
+export async function createGroup(group: Omit<Group, 'id'>): Promise<Group> {
+    await delay(300)
+    const groups = mockGetGroups()
+    return { ...group, id: Math.max(...groups.map((g) => g.id), 0) + 1 }
+}
+
+export async function updateGroup(id: number, updates: Partial<Group>): Promise<Group | undefined> {
+    await delay(300)
+    const groups = mockGetGroups()
+    const group = groups.find((g) => g.id === id)
     if (group) Object.assign(group, updates)
     return group
-  })
 }
 
-export function deleteGroup(_id: number): Promise<boolean> {
-  return delay(300).then(() => true)
+export async function deleteGroup(_id: number): Promise<boolean> {
+    await delay(300)
+    return true
 }
 
-export function getDashboardData(): Promise<{ metrics: DashboardMetrics, recentEvents: RecentEvent[] }> {
-  return delay(300).then(() => {
-    const { devices, alarms } = getDevicesData()
-    return { metrics: getDashboardMetrics(devices, alarms), recentEvents: getRecentEvents(devices, alarms) }
-  })
+export async function getDashboardData(): Promise<{ metrics: DashboardMetrics; recentEvents: RecentEvent[] }> {
+    const [devices, sensors, zones, groups, latest] = await Promise.all([
+        apiGet<BackendDevice[]>('/api/devices'),
+        apiGet<BackendSensor[]>('/api/sensors'),
+        apiGet<BackendZone[]>('/api/zones'),
+        apiGet<BackendGroup[]>('/api/groups'),
+        apiGet<BackendReading[]>('/api/readings/latest'),
+    ])
+
+    const mappedDevices = devices.map(toDevice)
+    const online = mappedDevices.filter((d) => d.status === 'online').length
+    const offline = mappedDevices.filter((d) => d.status === 'offline').length
+
+    const metrics: DashboardMetrics = {
+        totalDispositivos: mappedDevices.length,
+        dispositivosOnline: online,
+        dispositivosOffline: offline,
+        totalZonas: zones.length,
+        totalGrupos: groups.length,
+        alarmasActivas: 0,
+        totalSensores: sensors.length,
+        ultimaActualizacion: new Date().toISOString(),
+    }
+
+    const recentEvents: RecentEvent[] = latest
+        .filter((r) => r.valor_num != null)
+        .slice(0, 10)
+        .map((r) => {
+            const device = mappedDevices.find((d) => d.nombre === r.dispositivo)
+            return {
+                id: `evt-${r.record_id}`,
+                tipo: 'sensor' as const,
+                mensaje: `${r.sensor}: ${r.valor_num}${r.valor_unit ?? ''}`,
+                timestamp: r.time,
+                dispositivo: r.dispositivo,
+                severidad: 'info' as const,
+                deviceId: device?.id,
+            }
+        })
+
+    void readingKey
+
+    return { metrics, recentEvents }
 }
 
-export function refreshData(): Promise<void> {
-  return delay(300).then(() => {
-    devicesCache = null
+export async function refreshData(): Promise<void> {
     alarmsCache = null
-  })
 }
 
-export function getActiveAlarmsCount(): Promise<number> {
-  return delay(300).then(() => {
-    const { alarms } = getDevicesData()
-    return alarms.filter(a => a.estado === 'active').length
-  })
+export async function getActiveAlarmsCount(): Promise<number> {
+    return 0
 }

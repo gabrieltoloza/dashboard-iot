@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { Cpu, CheckCircle2, XCircle, Bell, RefreshCw, Activity } from 'lucide-vue-next'
-import { generateDataPoints } from '~/services/mockData'
+import { Cpu, CheckCircle2, XCircle, Bell, RefreshCw, Activity, DoorOpen, DoorClosed } from 'lucide-vue-next'
 import { SENSOR_TYPE_META } from '~/types'
+import type { SensorType } from '~/types'
+import { guessSensorType } from '~/services/adapters/sensorType.adapter'
 
 const store = useDashboardStore()
 const devicesStore = useDevicesStore()
+const sensorsStore = useSensorsStore()
 
 const totalSensors = computed(() => store.metrics?.totalSensores ?? 0)
 
@@ -14,42 +16,59 @@ function statusVariant(status: 'online' | 'offline' | 'warning') {
   return 'destructive'
 }
 
-const deviceSparklineData = ref<Record<number, { data: number[]; color: string }>>({})
-
-function loadSparklines() {
-  for (const device of devicesStore.devices) {
-    const firstSensor = device.sensores[0]
-    if (!firstSensor) continue
-    const points = generateDataPoints(device, 4, 30)
-    const values = points.filter(p => p.sensor === firstSensor.tipo).map(p => p.valor)
-    deviceSparklineData.value[device.id] = {
-      data: values,
-      color: SENSOR_TYPE_META[firstSensor.tipo].color,
-    }
-  }
+interface SensorVisual {
+  nombre: string
+  tipo: SensorType
+  values: number[]
 }
 
-watch(() => devicesStore.devices, () => {
-  if (devicesStore.devices.length) loadSparklines()
-}, { immediate: true })
+const deviceSensorVisuals = ref<Record<number, SensorVisual[]>>({})
 
-const refreshInterval = ref<ReturnType<typeof setInterval> | null>(null)
+async function loadSparklines() {
+  const devices = devicesStore.devices
+  if (devices.length === 0) return
 
-onMounted(() => {
+  await Promise.all(
+    devices.map(async (device) => {
+      const deviceSensors = sensorsStore.sensorsByDeviceId[device.id] ?? []
+      if (deviceSensors.length === 0) return
+
+      const points = await sensorsStore.fetchDataPoints(device.id, 4)
+      const visuals: SensorVisual[] = deviceSensors.map((b) => {
+        const tipo = guessSensorType(b.tipo, b.sensor_name, b.unit)
+        const values = points.filter((p) => p.nombre === b.sensor_name).map((p) => p.valor)
+        return { nombre: b.sensor_name, tipo, values }
+      })
+      deviceSensorVisuals.value[device.id] = visuals
+    }),
+  )
+}
+
+const metricsPolling = usePolling(() => store.fetchDashboardData(), 30000)
+const sparklinesPolling = usePolling(() => loadSparklines(), 60000)
+
+onMounted(async () => {
   store.fetchDashboardData()
-  devicesStore.fetchDevices()
-  refreshInterval.value = setInterval(() => {
-    store.refresh()
-  }, 30000)
+  await devicesStore.fetchDevices()
+  await sensorsStore.fetchAllSensors()
+  await loadSparklines()
+  metricsPolling.start()
+  sparklinesPolling.start()
 })
 
 onBeforeUnmount(() => {
-  if (refreshInterval.value) clearInterval(refreshInterval.value)
+  metricsPolling.stop()
+  sparklinesPolling.stop()
 })
 
-function getZoneName(id: number): string {
+function getZoneName(device: { zonaNombre?: string | null; zona: number }): string {
+  if (device.zonaNombre) return device.zonaNombre
   const zonesStore = useZonesStore()
-  return zonesStore.zones.find(z => z.id === id)?.nombre || 'N/A'
+  return zonesStore.zones.find((z) => z.id === device.zona)?.nombre || 'N/A'
+}
+
+function latestValorFor(deviceId: number, sensorNombre: string): number | undefined {
+  return sensorsStore.flatSensors.find((s) => s.deviceId === deviceId && s.nombre === sensorNombre)?.valor
 }
 </script>
 
@@ -160,28 +179,41 @@ function getZoneName(id: number): string {
             </div>
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted-foreground">Zona</span>
-              <span class="font-medium">{{ getZoneName(device.zona) }}</span>
+              <span class="font-medium">{{ getZoneName(device) }}</span>
             </div>
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted-foreground">Sensores</span>
-              <span class="font-mono">{{ device.sensores.length }}</span>
+              <span class="font-mono">{{ sensorsStore.countByDeviceId[device.id] ?? 0 }}</span>
             </div>
 
-            <UiSeparator v-if="deviceSparklineData[device.id]" />
+            <UiSeparator v-if="deviceSensorVisuals[device.id]?.length" />
 
-            <div v-if="deviceSparklineData[device.id]" class="space-y-1">
-              <div class="flex items-center justify-between text-xs">
-                <span class="text-muted-foreground">Última hora</span>
-                <span class="font-mono" :style="{ color: deviceSparklineData[device.id].color }">
-                  {{ SENSOR_TYPE_META[device.sensores[0].tipo].label }}
-                </span>
-              </div>
-              <div class="flex items-center justify-center">
+            <div v-if="deviceSensorVisuals[device.id]?.length" class="space-y-3">
+              <div
+                v-for="vis in deviceSensorVisuals[device.id]"
+                :key="vis.nombre"
+                class="flex items-center justify-between gap-3"
+              >
+                <div class="flex items-center gap-2 min-w-0 flex-1">
+                  <span
+                    class="text-sm font-medium w-12 shrink-0"
+                    :style="{ color: SENSOR_TYPE_META[vis.tipo].color }"
+                  >{{ vis.nombre }}</span>
+                  <span class="text-xs text-muted-foreground truncate">
+                    {{ latestValorFor(device.id, vis.nombre) ?? '—' }} {{ SENSOR_TYPE_META[vis.tipo].unit }}
+                  </span>
+                </div>
+
+                <div v-if="vis.tipo === 'puerta'" class="shrink-0">
+                  <DoorClosed v-if="latestValorFor(device.id, vis.nombre) === 1" :size="24" class="text-success" />
+                  <DoorOpen v-else :size="24" class="text-warning" />
+                </div>
                 <Sparkline
-                  :data="deviceSparklineData[device.id].data"
-                  :color="deviceSparklineData[device.id].color"
-                  :width="260"
-                  :height="40"
+                  v-else-if="vis.values.length > 1"
+                  :data="vis.values"
+                  :color="SENSOR_TYPE_META[vis.tipo].color"
+                  :width="120"
+                  :height="28"
                 />
               </div>
             </div>

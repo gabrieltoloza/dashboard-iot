@@ -4,6 +4,7 @@ import { Download, List, LayoutGrid } from 'lucide-vue-next'
 const devicesStore = useDevicesStore()
 const zonesStore = useZonesStore()
 const groupsStore = useGroupsStore()
+const sensorsStore = useSensorsStore()
 
 const columns = [
   { key: 'serial', label: 'Serial', sortable: true },
@@ -17,7 +18,7 @@ const columns = [
 ]
 
 const tableData = computed(() =>
-  devicesStore.devices.map(d => ({
+  devicesStore.devices.map((d) => ({
     id: d.id,
     serial: d.serial,
     nombre: d.nombre,
@@ -25,8 +26,10 @@ const tableData = computed(() =>
     status: d.status,
     zona: d.zona,
     grupo: d.grupo,
-    sensores: d.sensores,
-  }))
+    zonaNombre: d.zonaNombre,
+    grupoNombre: d.grupoNombre,
+    sensorCount: sensorsStore.countByDeviceId[d.id] ?? 0,
+  })),
 )
 
 const zones = computed(() => zonesStore.zones)
@@ -41,32 +44,42 @@ const statusOptions = [
 
 const zoneOptions = computed(() => [
   { label: 'Todas las zonas', value: 'all' },
-  ...zones.value.map(z => ({ label: z.nombre, value: z.id })),
+  ...zones.value.map((z) => ({ label: z.nombre, value: z.id })),
 ])
 
 const groupOptions = computed(() => [
   { label: 'Todos los grupos', value: 'all' },
-  ...groups.value.map(g => ({ label: g.nombre, value: g.id })),
+  ...groups.value.map((g) => ({ label: g.nombre, value: g.id })),
 ])
 
 function getZoneName(id: number): string {
-  return zones.value.find(z => z.id === id)?.nombre || 'N/A'
+  return zones.value.find((z) => z.id === id)?.nombre || 'N/A'
 }
 
 function getGroupName(id: number): string {
-  return groups.value.find(g => g.id === id)?.nombre || 'N/A'
+  return groups.value.find((g) => g.id === id)?.nombre || 'N/A'
 }
 
-onMounted(() => {
-  devicesStore.fetchDevices()
-  zonesStore.fetchZones()
-  groupsStore.fetchGroups()
+const devicesPolling = usePolling(() => devicesStore.fetchDevices(), 90000)
+
+onMounted(async () => {
+  await Promise.all([
+    devicesStore.fetchDevices(),
+    zonesStore.fetchZones(),
+    groupsStore.fetchGroups(),
+    sensorsStore.fetchAllSensors(),
+  ])
+  devicesPolling.start()
+})
+
+onBeforeUnmount(() => {
+  devicesPolling.stop()
 })
 </script>
 
 <template>
   <div class="space-y-6">
-    <AppPageHeader title="Estaciones" description="Gestión de estaciones IoT">
+    <AppPageHeader title="Dispositivos" description="Gestión de dispositivos IoT">
       <template #actions>
         <UiButton variant="outline" size="sm">
           <Download class="h-4 w-4" />
@@ -111,13 +124,13 @@ onMounted(() => {
           <AppStatusBadge :status="row.status" />
         </template>
         <template #cell-zona="{ row }">
-          {{ getZoneName(row.zona) }}
+          {{ row.zonaNombre || getZoneName(row.zona) }}
         </template>
         <template #cell-grupo="{ row }">
-          {{ getGroupName(row.grupo) }}
+          {{ row.grupoNombre || getGroupName(row.grupo) }}
         </template>
         <template #cell-sensores="{ row }">
-          <UiBadge variant="secondary">{{ row.sensores.length }}</UiBadge>
+          <UiBadge variant="secondary">{{ row.sensorCount }}</UiBadge>
         </template>
         <template #cell-acciones="{ row }">
           <UiButton variant="ghost" size="sm" as-child>
@@ -148,11 +161,11 @@ onMounted(() => {
               </div>
               <div class="flex justify-between">
                 <span class="text-muted-foreground">Zona</span>
-                <span class="font-medium">{{ getZoneName(device.zona) }}</span>
+                <span class="font-medium">{{ device.zonaNombre || getZoneName(device.zona) }}</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-muted-foreground">Sensores</span>
-                <UiBadge variant="secondary">{{ device.sensores.length }}</UiBadge>
+                <UiBadge variant="secondary">{{ sensorsStore.countByDeviceId[device.id] ?? 0 }}</UiBadge>
               </div>
             </div>
 
