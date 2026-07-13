@@ -2,6 +2,10 @@
 import { Plus, MapPin, Pencil, Trash2, Cpu } from 'lucide-vue-next'
 import type { Zone } from '~/types'
 
+definePageMeta({
+  middleware: ['auth'],
+})
+
 const zonesStore = useZonesStore()
 
 const showModal = ref(false)

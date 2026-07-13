@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { Download, List, LayoutGrid } from 'lucide-vue-next'
 
+definePageMeta({
+  middleware: ['auth'],
+})
+
 const devicesStore = useDevicesStore()
 const zonesStore = useZonesStore()
 const groupsStore = useGroupsStore()

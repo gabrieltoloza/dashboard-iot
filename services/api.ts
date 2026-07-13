@@ -33,10 +33,16 @@ function mapDeviceFilters(filters?: DeviceFilters): Record<string, string | numb
 }
 
 export async function getDevices(filters?: DeviceFilters): Promise<Device[]> {
-    const data = await apiGet<BackendDevice[]>('/api/devices', mapDeviceFilters(filters))
+    const data = await apiGet<BackendDevice[]>('/devices', mapDeviceFilters(filters))
+    if (typeof console !== 'undefined') {
+        console.log('[getDevices] raw sample', Array.isArray(data) ? data.slice(0, 1) : data)
+    }
     let result = data.map(toDevice)
     if (filters?.status && filters.status !== 'all') {
         result = result.filter((d) => d.status === filters.status)
+    }
+    if (typeof console !== 'undefined') {
+        console.log('[getDevices] mapped count', result.length, 'first:', result[0])
     }
     return result
 }
@@ -44,8 +50,8 @@ export async function getDevices(filters?: DeviceFilters): Promise<Device[]> {
 export async function getDevice(id: number): Promise<Device | undefined> {
     try {
         const [detail, latest] = await Promise.all([
-            apiGet<BackendDeviceDetail>(`/api/devices/${id}`),
-            apiGet<BackendReading[]>('/api/readings/latest'),
+            apiGet<BackendDeviceDetail>(`/devices/${id}`),
+            apiGet<BackendReading[]>('/readings/latest'),
         ])
         const base = toDevice(detail)
         const latestByName: Record<string, BackendReading> = {}
@@ -66,18 +72,18 @@ export async function getDevice(id: number): Promise<Device | undefined> {
 }
 
 export async function getAllSensors(): Promise<BackendSensor[]> {
-    return apiGet<BackendSensor[]>('/api/sensors')
+    return apiGet<BackendSensor[]>('/sensors')
 }
 
 export async function getLatestReadings(): Promise<BackendReading[]> {
-    return apiGet<BackendReading[]>('/api/readings/latest')
+    return apiGet<BackendReading[]>('/readings/latest')
 }
 
 export async function getDeviceDataPoints(dispositivo: string, hours = 24): Promise<DataPoint[]> {
     if (!dispositivo) return []
     const now = new Date()
     const from = new Date(now.getTime() - hours * 60 * 60 * 1000)
-    const data = await apiGet<BackendReading[]>('/api/readings', {
+    const data = await apiGet<BackendReading[]>('/readings', {
         device: dispositivo,
         from: from.toISOString(),
         to: now.toISOString(),
@@ -112,7 +118,7 @@ export async function acknowledgeAlarm(id: string): Promise<AlarmPoint | undefin
 }
 
 export async function getZonesData(): Promise<Zone[]> {
-    const data = await apiGet<BackendZone[]>('/api/zones')
+    const data = await apiGet<BackendZone[]>('/zones')
     return data.map(toZone)
 }
 
@@ -136,7 +142,7 @@ export async function deleteZone(_id: number): Promise<boolean> {
 }
 
 export async function getGroupsData(): Promise<Group[]> {
-    const data = await apiGet<BackendGroup[]>('/api/groups')
+    const data = await apiGet<BackendGroup[]>('/groups')
     return data.map(toGroup)
 }
 
@@ -160,13 +166,29 @@ export async function deleteGroup(_id: number): Promise<boolean> {
 }
 
 export async function getDashboardData(): Promise<{ metrics: DashboardMetrics; recentEvents: RecentEvent[] }> {
-    const [devices, sensors, zones, groups, latest] = await Promise.all([
-        apiGet<BackendDevice[]>('/api/devices'),
-        apiGet<BackendSensor[]>('/api/sensors'),
-        apiGet<BackendZone[]>('/api/zones'),
-        apiGet<BackendGroup[]>('/api/groups'),
-        apiGet<BackendReading[]>('/api/readings/latest'),
+    const results = await Promise.allSettled([
+        apiGet<BackendDevice[]>('/devices'),
+        apiGet<BackendSensor[]>('/sensors'),
+        apiGet<BackendZone[]>('/zones'),
+        apiGet<BackendGroup[]>('/groups'),
+        apiGet<BackendReading[]>('/readings/latest'),
     ])
+
+    const devices = results[0].status === 'fulfilled' ? results[0].value : []
+    const sensors = results[1].status === 'fulfilled' ? results[1].value : []
+    const zones = results[2].status === 'fulfilled' ? results[2].value : []
+    const groups = results[3].status === 'fulfilled' ? results[3].value : []
+    const latest = results[4].status === 'fulfilled' ? results[4].value : []
+
+    if (typeof console !== 'undefined') {
+        console.log('[getDashboardData]', {
+            devices: devices.length,
+            sensors: sensors.length,
+            zones: zones.length,
+            groups: groups.length,
+            latest: latest.length,
+        })
+    }
 
     const mappedDevices = devices.map(toDevice)
     const online = mappedDevices.filter((d) => d.status === 'online').length

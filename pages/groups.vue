@@ -2,6 +2,10 @@
 import { Plus, Users, Pencil, Trash2, Cpu } from 'lucide-vue-next'
 import type { Group } from '~/types'
 
+definePageMeta({
+  middleware: ['auth'],
+})
+
 const groupsStore = useGroupsStore()
 
 const showModal = ref(false)

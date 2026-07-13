@@ -6,14 +6,40 @@ export async function apiGet<T>(path: string, query?: Query): Promise<T> {
     const url = base.replace(/\/$/, '') + path
 
     try {
-        const res = await $fetch<{ data: T }>(url, {
+        const raw = await $fetch<unknown>(url, {
             method: 'GET',
-            query: query as Record<string, string | number>,
+            query: query as Record<string, string | number | boolean>,
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+            },
         })
-        return res.data
+
+        if (typeof console !== 'undefined') {
+            const preview = Array.isArray(raw)
+                ? `Array(${raw.length})`
+                : raw && typeof raw === 'object'
+                    ? `Object{${Object.keys(raw).join(',')}}`
+                    : typeof raw
+            console.log(`[apiGet] ${url} → ${preview}`)
+        }
+
+        if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'data' in raw) {
+            return (raw as { data: T }).data
+        }
+        return raw as T
     } catch (e: unknown) {
-        const err = e as { data?: { error?: string }; message?: string; statusMessage?: string }
-        const msg = err?.data?.error || err?.statusMessage || err?.message || `Request failed: ${path}`
+        const err = e as {
+            data?: { error?: string; message?: string }
+            message?: string
+            statusMessage?: string
+            statusCode?: number
+        }
+        const backendMsg = err?.data?.error || err?.data?.message
+        const msg = backendMsg || err?.statusMessage || err?.message || `Request failed: ${path}`
+        if (typeof console !== 'undefined') {
+            console.error(`[apiGet] ${url} → ERROR`, { status: err?.statusCode, msg, raw: err })
+        }
         throw new Error(msg)
     }
 }

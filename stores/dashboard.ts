@@ -1,43 +1,65 @@
 import { defineStore } from 'pinia'
+import { ref } from 'vue'
 import type { DashboardMetrics, RecentEvent } from '~/types'
 import { getDashboardData, refreshData } from '~/services/api'
 
-interface DashboardState {
-    metrics: DashboardMetrics | null
-    recentEvents: RecentEvent[]
-    loading: boolean
-    error: string | null
-    lastRefresh: Date | null
-}
+export const useDashboardStore = defineStore('dashboard', () => {
+    
+    const metrics = ref<DashboardMetrics | null>(null)
+    const recentEvents = ref<RecentEvent[]>([])
+    const loading = ref(false)
+    const error = ref<string | null>(null)
+    const lastRefresh = ref<Date | null>(null)
 
-export const useDashboardStore = defineStore('dashboard', {
-    state: (): DashboardState => ({
-        metrics: null,
-        recentEvents: [],
-        loading: false,
-        error: null,
-        lastRefresh: null
-    }),
-
-    actions: {
-        async fetchDashboardData() {
-            this.loading = true
-            this.error = null
-            try {
-                const data = await getDashboardData()
-                this.metrics = data.metrics
-                this.recentEvents = data.recentEvents
-                this.lastRefresh = new Date()
-            } catch (e) {
-                this.error = e instanceof Error ? e.message : 'Failed to fetch dashboard data'
-            } finally {
-                this.loading = false
+    async function fetchDashboardData() {
+        loading.value = true
+        error.value = null
+        try {
+            const data = await getDashboardData()
+            metrics.value = data.metrics
+            recentEvents.value = data.recentEvents
+            lastRefresh.value = new Date()
+            if (typeof console !== 'undefined') {
+                console.log('[dashboardStore] fetchDashboardData OK', {
+                    totalDispositivos: data.metrics.totalDispositivos,
+                    totalSensores: data.metrics.totalSensores,
+                })
             }
-        },
-
-        async refresh() {
-            await refreshData()
-            await this.fetchDashboardData()
+        } catch (e) {
+            error.value = e instanceof Error ? e.message : 'Failed to fetch dashboard data'
+            if (typeof console !== 'undefined') {
+                console.error('[dashboardStore] fetchDashboardData FAILED', e)
+            }
+        } finally {
+            loading.value = false
         }
+    }
+
+    async function refresh() {
+        await refreshData()
+        await fetchDashboardData()
+    }
+
+    function reset() {
+        metrics.value = null
+        recentEvents.value = []
+        loading.value = false
+        error.value = null
+        lastRefresh.value = null
+    }
+
+    return {
+
+        // Getters
+        metrics,
+        recentEvents,
+        loading,
+        error,
+        lastRefresh,
+
+        // Setters
+        fetchDashboardData,
+        refresh,
+        reset,
     }
 })

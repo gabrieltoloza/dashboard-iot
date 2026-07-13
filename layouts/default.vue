@@ -11,17 +11,20 @@ import {
 	Sun,
 	Moon,
 	Menu,
+	LogOut,
+	ChevronDown,
 } from 'lucide-vue-next'
 
 const route = useRoute()
 const alarmsStore = useAlarmsStore()
+const userStore = useUserStore()
 
 const isDark = ref(true)
 const sidebarOpen = ref(false)
 const now = ref(new Date())
 
 const navItems = [
-	{ to: '/', label: 'Dashboard', icon: Activity, match: (p: string) => p === '/' },
+	{ to: '/dashboard', label: 'Dashboard', icon: Activity, match: (p: string) => p === '/dashboard' || p === '/' },
 	{ to: '/devices', label: 'Dispositivos', icon: Cpu, match: (p: string) => p.startsWith('/devices') },
 	{ to: '/sensors', label: 'Sensores', icon: BarChart3, match: (p: string) => p === '/sensors' },
 	{ to: '/alarms', label: 'Alarmas', icon: Bell, match: (p: string) => p === '/alarms' },
@@ -32,6 +35,7 @@ const navItems = [
 
 const pageTitles: Record<string, string> = {
 	'/': 'Dashboard',
+	'/dashboard': 'Dashboard',
 	'/devices': 'Dispositivos',
 	'/sensors': 'Sensores',
 	'/alarms': 'Alarmas',
@@ -52,9 +56,21 @@ const currentTime = computed(() => {
 	return now.value.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 })
 
+const userInitials = computed(() => {
+	const name = userStore.user.username || userStore.user.email || '?'
+	return name.slice(0, 2).toUpperCase()
+})
+
+const userDisplay = computed(() => userStore.user.username || 'Usuario')
+const userEmail = computed(() => userStore.user.email || '')
+
 function toggleTheme() {
 	isDark.value = !isDark.value
 	document.documentElement.classList.toggle('dark', isDark.value)
+}
+
+async function handleLogout() {
+	await useLogout()
 }
 
 let clockInterval: ReturnType<typeof setInterval> | null = null
@@ -99,13 +115,25 @@ onBeforeUnmount(() => {
 				</nav>
 
 				<div class="p-4 border-t border-border">
-					<div class="flex items-center gap-3">
-						<UiAvatar fallback="OP" class="h-9 w-9" />
-						<div class="flex-1 min-w-0">
-							<p class="font-medium text-sm truncate">Operador</p>
-							<p class="text-xs text-muted-foreground truncate">operador@empresa.com</p>
-						</div>
-					</div>
+					<UiDropdownMenu>
+						<template #trigger>
+							<button class="w-full flex items-center gap-3 rounded-md p-1.5 transition-colors hover:bg-accent">
+								<UiAvatar :fallback="userInitials" class="h-9 w-9" />
+								<div class="flex-1 min-w-0 text-left">
+									<p class="font-medium text-sm truncate">{{ userDisplay }}</p>
+									<p class="text-xs text-muted-foreground truncate">{{ userEmail }}</p>
+								</div>
+								<ChevronDown class="h-4 w-4 text-muted-foreground shrink-0" />
+							</button>
+						</template>
+						<button
+							class="w-full flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+							@click="handleLogout"
+						>
+							<LogOut class="h-4 w-4" />
+							<span>Cerrar sesion</span>
+						</button>
+					</UiDropdownMenu>
 				</div>
 			</aside>
 
@@ -141,6 +169,19 @@ onBeforeUnmount(() => {
 							</span>
 						</NuxtLink>
 					</nav>
+					<div class="p-4 border-t border-border space-y-3">
+						<div class="flex items-center gap-3">
+							<UiAvatar :fallback="userInitials" class="h-9 w-9" />
+							<div class="flex-1 min-w-0">
+								<p class="font-medium text-sm truncate">{{ userDisplay }}</p>
+								<p class="text-xs text-muted-foreground truncate">{{ userEmail }}</p>
+							</div>
+						</div>
+						<UiButton variant="outline" class="w-full" @click="handleLogout">
+							<LogOut class="h-4 w-4" />
+							Cerrar sesion
+						</UiButton>
+					</div>
 				</div>
 			</UiSheet>
 

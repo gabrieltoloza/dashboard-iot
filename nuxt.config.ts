@@ -49,7 +49,20 @@ export default defineNuxtConfig({
     runtimeConfig: {
         public: {
             apiBaseUrl: import.meta.env.NUXT_PUBLIC_API_BASE_URL || '/api',
+            apiProxyTarget: import.meta.env.NUXT_PUBLIC_API_PROXY_TARGET || 'http://127.0.0.1:3003',
             pollingInterval: 30000,
+        },
+    },
+
+    vite: {
+        server: {
+            proxy: {
+                '/dashboard-iot/api': {
+                    target: import.meta.env.NUXT_PUBLIC_API_PROXY_TARGET || 'http://127.0.0.1:3003',
+                    changeOrigin: true,
+                    rewrite: (path) => path.replace(/^\/dashboard-iot/, ''),
+                },
+            },
         },
     },
 

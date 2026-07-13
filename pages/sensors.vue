@@ -3,6 +3,10 @@ import { Search, DoorOpen, DoorClosed } from 'lucide-vue-next'
 import type { SensorState } from '~/types'
 import { SENSOR_TYPE_META } from '~/types'
 
+definePageMeta({
+  middleware: ['auth'],
+})
+
 const devicesStore = useDevicesStore()
 const sensorsStore = useSensorsStore()
 

@@ -6,6 +6,10 @@ import { SENSOR_TYPE_META } from '~/types'
 import type { SensorState } from '~/types'
 import { getDeviceDataPoints } from '~/services/api'
 
+definePageMeta({
+  middleware: ['auth'],
+})
+
 const route = useRoute()
 const devicesStore = useDevicesStore()
 const zonesStore = useZonesStore()
